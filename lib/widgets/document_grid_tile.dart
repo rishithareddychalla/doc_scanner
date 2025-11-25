@@ -34,7 +34,7 @@ class DocumentGridTile extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   image: DecorationImage(
-                    image: FileImage(doc.imageFile),
+                    image: FileImage(doc.imageFiles as File),
                     fit: BoxFit.cover,
                   ),
                 ),

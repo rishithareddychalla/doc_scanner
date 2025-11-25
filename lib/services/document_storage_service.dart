@@ -43,4 +43,20 @@ class DocumentStorageService {
   void deleteDocument(String id) {
     _documents.removeWhere((d) => d.id == id);
   }
+
+  ScannedDocument? renameDocument(String id, String newTitle) {
+    final doc = getById(id);
+    if (doc == null) {
+      return null;
+    }
+    final index = _documents.indexOf(doc);
+    final newDoc = ScannedDocument(
+      id: doc.id,
+      title: newTitle,
+      imageFile: doc.imageFile,
+      createdAt: doc.createdAt,
+    );
+    _documents[index] = newDoc;
+    return newDoc;
+  }
 }

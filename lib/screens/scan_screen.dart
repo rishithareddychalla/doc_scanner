@@ -16,7 +16,7 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   final ImagePicker _picker = ImagePicker();
-  File? _previewImage;
+  final List<File> _previewImages = [];
   bool _isSaving = false;
   final _storage = DocumentStorageService();
 
@@ -27,7 +27,7 @@ class _ScanScreenState extends State<ScanScreen> {
     );
     if (picked != null) {
       setState(() {
-        _previewImage = File(picked.path);
+        _previewImages.add(File(picked.path));
       });
     }
   }
@@ -39,24 +39,24 @@ class _ScanScreenState extends State<ScanScreen> {
     );
     if (picked != null) {
       setState(() {
-        _previewImage = File(picked.path);
+        _previewImages.add(File(picked.path));
       });
     }
   }
 
   Future<void> _saveDocument() async {
-    if (_previewImage == null) return;
+    if (_previewImages.isEmpty) return;
 
     setState(() {
       _isSaving = true;
     });
 
     // TODO: Do filters, cropping, perspective fix before saving
-    _storage.addDocument(imageFile: _previewImage!);
+    _storage.addDocument(imageFiles: _previewImages);
 
     setState(() {
       _isSaving = false;
-      _previewImage = null;
+      _previewImages.clear();
     });
 
     if (mounted) {
@@ -66,9 +66,51 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
+  Widget _buildPreview() {
+    if (_previewImages.isEmpty) {
+      return const Center(child: Text('No pages added yet'));
+    }
+
+    return ListView.builder(
+      itemCount: _previewImages.length,
+      itemBuilder: (context, index) {
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(
+                    _previewImages[index],
+                    width: 72,
+                    height: 72,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text('Page ${index + 1}'),
+                const Spacer(),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _previewImages.removeAt(index);
+                    });
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                )
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasImage = _previewImage != null;
+    final hasImage = _previewImages.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -78,26 +120,17 @@ class _ScanScreenState extends State<ScanScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            if (hasImage)
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.file(
-                    _previewImage!,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'No preview yet.\nTap "Camera" or "Gallery" to start.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ),
-              ),
+            Expanded(
+              child: _previewImages.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No preview yet.\nTap "Camera" or "Gallery" to start.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                    )
+                  : _buildPreview(),
+            ),
             const SizedBox(height: 16),
             Row(
               children: [

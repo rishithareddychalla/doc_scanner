@@ -19,13 +19,13 @@ class DocumentStorageService {
   }
 
   ScannedDocument addDocument({
-    required File imageFile,
+    required List<File> imageFiles,
     String? suggestedTitle,
   }) {
     final doc = ScannedDocument(
       id: _uuid.v4(),
       title: suggestedTitle ?? 'Scan ${DateTime.now().toIso8601String()}',
-      imageFile: imageFile,
+      imageFiles: imageFiles,
       createdAt: DateTime.now(),
     );
     _documents.add(doc);
@@ -53,7 +53,7 @@ class DocumentStorageService {
     final newDoc = ScannedDocument(
       id: doc.id,
       title: newTitle,
-      imageFile: doc.imageFile,
+      imageFiles: doc.imageFiles,
       createdAt: doc.createdAt,
     );
     _documents[index] = newDoc;

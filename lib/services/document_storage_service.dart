@@ -20,7 +20,7 @@ class DocumentStorageService {
 
   ScannedDocument addDocument({
     required List<File> imageFiles,
-    String? suggestedTitle,
+    String? suggestedTitle, required String title,
   }) {
     final doc = ScannedDocument(
       id: _uuid.v4(),

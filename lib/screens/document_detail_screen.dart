@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
 import '../models/scanned_document.dart';
 import '../services/document_storage_service.dart';
@@ -14,11 +15,10 @@ class DocumentDetailScreen extends StatefulWidget {
   final List<File>? imageFiles;
 
   const DocumentDetailScreen({super.key, required this.documentId})
-      : imageFiles = null;
+    : imageFiles = null;
 
-  const DocumentDetailScreen.newDocument(
-      {super.key, required this.imageFiles})
-      : documentId = null;
+  const DocumentDetailScreen.newDocument({super.key, required this.imageFiles})
+    : documentId = null;
 
   @override
   State<DocumentDetailScreen> createState() => _DocumentDetailScreenState();
@@ -67,36 +67,96 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
         title: _doc!.title,
       );
       // Pop twice to go back to the document list screen
-      Navigator.of(context)..pop()..pop();
+      Navigator.of(context)
+        ..pop()
+        ..pop();
+    }
+  }
+
+  Future<bool> _requestPermissions(ImageSource source) async {
+    if (source == ImageSource.camera) {
+      final status = await Permission.camera.request();
+      return status.isGranted;
+    } else {
+      // For gallery access
+      final status = await Permission.photos.request();
+      if (status.isDenied) {
+        // Try storage permission for older Android versions
+        final storageStatus = await Permission.storage.request();
+        return storageStatus.isGranted;
+      }
+      return status.isGranted;
     }
   }
 
   Future<void> _addPage(ImageSource source) async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: source);
+    // Request permissions first
+    final hasPermission = await _requestPermissions(source);
 
-    if (pickedFile != null) {
-      final croppedFile = await ImageCropper().cropImage(
-        sourcePath: pickedFile.path,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Crop Image',
-            toolbarColor: Colors.deepOrange,
-            toolbarWidgetColor: Colors.white,
-            initAspectRatio: CropAspectRatioPreset.original,
-            lockAspectRatio: false,
+    if (!hasPermission) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              source == ImageSource.camera
+                  ? 'Camera permission is required to take photos'
+                  : 'Storage permission is required to access gallery',
+            ),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () => openAppSettings(),
+            ),
           ),
-          IOSUiSettings(minimumAspectRatio: 1.0),
-        ],
+        );
+      }
+      return;
+    }
+
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: source,
+        imageQuality: 85,
       );
 
-      if (croppedFile != null) {
+      if (pickedFile != null) {
+        // First add the image, then allow editing
         setState(() {
-          _doc!.imageFiles.add(File(croppedFile.path));
+          _doc!.imageFiles.add(File(pickedFile.path));
           if (!_isNewDocument) {
             DocumentStorageService().updateDocument(_doc!);
           }
         });
+
+        // Show option to edit the newly added page
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Page added! Tap Edit to crop or adjust.'),
+              action: SnackBarAction(
+                label: 'Edit Now',
+                onPressed: () {
+                  // Set current page to the newly added image
+                  setState(() {
+                    _currentPage = _doc!.imageFiles.length - 1;
+                  });
+                  _pageController.animateToPage(
+                    _currentPage,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                  );
+                  _editCurrentPage();
+                },
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
       }
     }
   }
@@ -187,7 +247,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
               onPressed: _saveDocument,
               icon: const Icon(Icons.save_outlined),
               tooltip: 'Save document',
-            )
+            ),
         ],
       ),
       body: Column(

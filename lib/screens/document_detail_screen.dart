@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import '../models/scanned_document.dart';
 import '../services/document_storage_service.dart';
 import 'reorder_screen.dart';
@@ -44,8 +45,52 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     final pickedFile = await picker.pickImage(source: source);
 
     if (pickedFile != null) {
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Image',
+            toolbarColor: Colors.deepOrange,
+            toolbarWidgetColor: Colors.white,
+            initAspectRatio: CropAspectRatioPreset.original,
+            lockAspectRatio: false,
+          ),
+          IOSUiSettings(minimumAspectRatio: 1.0),
+        ],
+      );
+
+      if (croppedFile != null) {
+        setState(() {
+          _doc!.imageFiles.add(File(croppedFile.path));
+          DocumentStorageService().updateDocument(_doc!);
+        });
+      }
+    }
+  }
+
+  Future<void> _editCurrentPage() async {
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: _doc!.imageFiles[_currentPage].path,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Edit Page',
+          toolbarColor: Colors.deepOrange,
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.original,
+          lockAspectRatio: false,
+          activeControlsWidgetColor: Colors.deepOrange,
+          dimmedLayerColor: Colors.black54,
+          statusBarLight: false,
+          cropFrameColor: Colors.deepOrange,
+          cropGridColor: Colors.white,
+        ),
+        IOSUiSettings(title: 'Edit Page', minimumAspectRatio: 1.0),
+      ],
+    );
+
+    if (croppedFile != null) {
       setState(() {
-        _doc!.imageFiles.add(File(pickedFile.path));
+        _doc!.imageFiles[_currentPage] = File(croppedFile.path);
         DocumentStorageService().updateDocument(_doc!);
       });
     }
@@ -86,9 +131,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot delete the last page.'),
-        ),
+        const SnackBar(content: Text('Cannot delete the last page.')),
       );
     }
   }
@@ -96,16 +139,10 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (_doc == null) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_doc!.title),
-      ),
+      appBar: AppBar(title: Text(_doc!.title)),
       body: Column(
         children: [
           Expanded(
@@ -200,6 +237,8 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
             }
           } else if (index == 2) {
             _deletePage();
+          } else if (index == 3) {
+            _editCurrentPage();
           }
         },
         items: const [
@@ -207,14 +246,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
             icon: Icon(Icons.add_a_photo),
             label: 'Add Page',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.reorder),
-            label: 'Reorder',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.delete),
-            label: 'Delete',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.reorder), label: 'Reorder'),
+          BottomNavigationBarItem(icon: Icon(Icons.delete), label: 'Delete'),
+          BottomNavigationBarItem(icon: Icon(Icons.edit), label: 'Edit'),
         ],
       ),
     );

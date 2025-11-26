@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 
 import '../services/document_storage_service.dart';
 import '../widgets/primary_button.dart';
@@ -26,9 +27,7 @@ class _ScanScreenState extends State<ScanScreen> {
       imageQuality: 95,
     );
     if (picked != null) {
-      setState(() {
-        _previewImages.add(File(picked.path));
-      });
+      await _processAndAddImage(picked.path);
     }
   }
 
@@ -38,8 +37,34 @@ class _ScanScreenState extends State<ScanScreen> {
       imageQuality: 95,
     );
     if (picked != null) {
+      await _processAndAddImage(picked.path);
+    }
+  }
+
+  Future<void> _processAndAddImage(String imagePath) async {
+    // Show editing options after capturing/selecting image
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: imagePath,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Edit Document',
+          toolbarColor: Colors.deepOrange,
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.original,
+          lockAspectRatio: false,
+          activeControlsWidgetColor: Colors.deepOrange,
+          dimmedLayerColor: Colors.black54,
+          statusBarLight: false,
+          cropFrameColor: Colors.deepOrange,
+          cropGridColor: Colors.white,
+        ),
+        IOSUiSettings(title: 'Edit Document', minimumAspectRatio: 1.0),
+      ],
+    );
+
+    if (croppedFile != null) {
       setState(() {
-        _previewImages.add(File(picked.path));
+        _previewImages.add(File(croppedFile.path));
       });
     }
   }
@@ -60,9 +85,9 @@ class _ScanScreenState extends State<ScanScreen> {
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Document saved')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Document saved')));
     }
   }
 
@@ -93,13 +118,21 @@ class _ScanScreenState extends State<ScanScreen> {
                 Text('Page ${index + 1}'),
                 const Spacer(),
                 IconButton(
+                  onPressed: () async {
+                    await _editImage(index);
+                  },
+                  icon: const Icon(Icons.edit),
+                  tooltip: 'Edit page',
+                ),
+                IconButton(
                   onPressed: () {
                     setState(() {
                       _previewImages.removeAt(index);
                     });
                   },
                   icon: const Icon(Icons.delete_outline),
-                )
+                  tooltip: 'Delete page',
+                ),
               ],
             ),
           ),
@@ -108,14 +141,39 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
+  Future<void> _editImage(int index) async {
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: _previewImages[index].path,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Edit Document',
+          toolbarColor: Colors.deepOrange,
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.original,
+          lockAspectRatio: false,
+          activeControlsWidgetColor: Colors.deepOrange,
+          dimmedLayerColor: Colors.black54,
+          statusBarLight: false,
+          cropFrameColor: Colors.deepOrange,
+          cropGridColor: Colors.white,
+        ),
+        IOSUiSettings(title: 'Edit Document', minimumAspectRatio: 1.0),
+      ],
+    );
+
+    if (croppedFile != null) {
+      setState(() {
+        _previewImages[index] = File(croppedFile.path);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasImage = _previewImages.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Scan'),
-      ),
+      appBar: AppBar(title: const Text('Scan')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

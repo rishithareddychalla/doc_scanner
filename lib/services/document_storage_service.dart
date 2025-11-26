@@ -59,4 +59,11 @@ class DocumentStorageService {
     _documents[index] = newDoc;
     return newDoc;
   }
+
+  void updateDocument(ScannedDocument doc) {
+    final index = _documents.indexWhere((d) => d.id == doc.id);
+    if (index != -1) {
+      _documents[index] = doc;
+    }
+  }
 }

@@ -4,13 +4,21 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
+import 'package:intl/intl.dart';
 import '../models/scanned_document.dart';
 import '../services/document_storage_service.dart';
 import 'reorder_screen.dart';
 
 class DocumentDetailScreen extends StatefulWidget {
-  final String documentId;
-  const DocumentDetailScreen({super.key, required this.documentId});
+  final String? documentId;
+  final List<File>? imageFiles;
+
+  const DocumentDetailScreen({super.key, required this.documentId})
+      : imageFiles = null;
+
+  const DocumentDetailScreen.newDocument(
+      {super.key, required this.imageFiles})
+      : documentId = null;
 
   @override
   State<DocumentDetailScreen> createState() => _DocumentDetailScreenState();
@@ -21,12 +29,24 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   late PageController _pageController;
 
   ScannedDocument? _doc;
+  bool _isNewDocument = false;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
-    _doc = DocumentStorageService().getById(widget.documentId);
+    if (widget.documentId != null) {
+      _doc = DocumentStorageService().getById(widget.documentId!);
+    } else if (widget.imageFiles != null) {
+      _isNewDocument = true;
+      _doc = ScannedDocument(
+        id: DateTime.now().toIso8601String(),
+        title: 'Scan ${DateFormat.yMd().add_jms().format(DateTime.now())}',
+        imageFiles: widget.imageFiles!,
+        createdAt: DateTime.now(),
+      );
+    }
+
     if (_doc == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Navigator.of(context).pop();
@@ -38,6 +58,17 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  void _saveDocument() {
+    if (_isNewDocument) {
+      DocumentStorageService().addDocument(
+        imageFiles: _doc!.imageFiles,
+        title: _doc!.title,
+      );
+      // Pop twice to go back to the document list screen
+      Navigator.of(context)..pop()..pop();
+    }
   }
 
   Future<void> _addPage(ImageSource source) async {
@@ -62,7 +93,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       if (croppedFile != null) {
         setState(() {
           _doc!.imageFiles.add(File(croppedFile.path));
-          DocumentStorageService().updateDocument(_doc!);
+          if (!_isNewDocument) {
+            DocumentStorageService().updateDocument(_doc!);
+          }
         });
       }
     }
@@ -91,7 +124,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     if (croppedFile != null) {
       setState(() {
         _doc!.imageFiles[_currentPage] = File(croppedFile.path);
-        DocumentStorageService().updateDocument(_doc!);
+        if (!_isNewDocument) {
+          DocumentStorageService().updateDocument(_doc!);
+        }
       });
     }
   }
@@ -119,7 +154,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                       _currentPage = _doc!.imageFiles.length - 1;
                     }
                     _pageController.jumpToPage(_currentPage);
-                    DocumentStorageService().updateDocument(_doc!);
+                    if (!_isNewDocument) {
+                      DocumentStorageService().updateDocument(_doc!);
+                    }
                   });
                   Navigator.of(context).pop();
                 },
@@ -142,7 +179,17 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return Scaffold(
-      appBar: AppBar(title: Text(_doc!.title)),
+      appBar: AppBar(
+        title: Text(_doc!.title),
+        actions: [
+          if (_isNewDocument)
+            IconButton(
+              onPressed: _saveDocument,
+              icon: const Icon(Icons.save_outlined),
+              tooltip: 'Save document',
+            )
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
@@ -232,7 +279,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
               setState(() {
                 _doc!.imageFiles.clear();
                 _doc!.imageFiles.addAll(newImageList);
-                DocumentStorageService().updateDocument(_doc!);
+                if (!_isNewDocument) {
+                  DocumentStorageService().updateDocument(_doc!);
+                }
               });
             }
           } else if (index == 2) {

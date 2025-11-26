@@ -41,15 +41,11 @@ dependencies:
   path_provider: ^2.1.5
   path: ^1.9.0
 
-  # PDF generation (later)
-  pdf: ^3.10.4
-  printing: ^5.13.0
-
   # State mgmt (simple)
   provider: ^6.1.2
   uuid: ^4.5.2
   intl: ^0.20.2
-  image_cropper: ^8.0.2
+  image: ^4.1.7
   flutter_image_filters: ^0.0.14
   permission_handler: ^11.3.1
 

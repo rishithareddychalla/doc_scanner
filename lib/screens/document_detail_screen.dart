@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
 import '../models/scanned_document.dart';
 import '../services/document_storage_service.dart';
+import '../services/pdf_service.dart';
 import 'reorder_screen.dart';
 
 class DocumentDetailScreen extends StatefulWidget {
@@ -71,6 +72,38 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       Navigator.of(context)
         ..pop()
         ..pop();
+    }
+  }
+
+  Future<void> _saveAsPdf() async {
+    if (_doc == null || _doc!.imageFiles.isEmpty) return;
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final pdfService = PdfService();
+      final path = await pdfService.saveDocumentAsPdf(_doc!);
+
+      if (mounted) {
+        Navigator.pop(context); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('PDF saved to $path'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving PDF: $e')),
+        );
+      }
     }
   }
 
@@ -229,6 +262,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       appBar: AppBar(
         title: Text(_doc!.title),
         actions: [
+          IconButton(
+            onPressed: _saveAsPdf,
+            icon: const Icon(Icons.picture_as_pdf),
+            tooltip: 'Save as PDF',
+          ),
           if (_isNewDocument)
             IconButton(
               onPressed: _saveDocument,

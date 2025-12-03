@@ -1,6 +1,7 @@
 // lib/screens/document_list_screen.dart
 import 'package:docscanner/models/scanned_document.dart';
 import 'package:flutter/material.dart';
+import 'dart:io';
 import '../services/document_storage_service.dart';
 import '../widgets/document_grid_tile.dart';
 import 'document_detail_screen.dart';
@@ -25,6 +26,10 @@ class _DocumentListScreenState extends State<DocumentListScreen> {
           content: TextField(
             controller: controller,
             autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Document name',
+              border: OutlineInputBorder(),
+            ),
           ),
           actions: [
             TextButton(
@@ -32,7 +37,8 @@ class _DocumentListScreenState extends State<DocumentListScreen> {
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(controller.text),
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
               child: const Text('Rename'),
             ),
           ],
@@ -51,12 +57,29 @@ class _DocumentListScreenState extends State<DocumentListScreen> {
     final docs = _storage.getAllDocuments();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Scanned documents'),
-      ),
+      appBar: AppBar(title: const Text('My Documents')),
       body: docs.isEmpty
-          ? const Center(
-              child: Text('No documents yet. Scan something!'),
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.document_scanner, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No documents yet',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.headlineSmall?.copyWith(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Scan something to get started!',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: Colors.grey),
+                  ),
+                ],
+              ),
             )
           : GridView.builder(
               padding: const EdgeInsets.all(16.0),

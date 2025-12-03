@@ -7,6 +7,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:printing/printing.dart';
 import '../models/scanned_document.dart';
 import '../services/document_storage_service.dart';
 import '../services/pdf_service.dart';
@@ -72,38 +76,6 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       Navigator.of(context)
         ..pop()
         ..pop();
-    }
-  }
-
-  Future<void> _saveAsPdf() async {
-    if (_doc == null || _doc!.imageFiles.isEmpty) return;
-
-    try {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
-      );
-
-      final pdfService = PdfService();
-      final path = await pdfService.saveDocumentAsPdf(_doc!);
-
-      if (mounted) {
-        Navigator.pop(context); // Dismiss loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('PDF saved to $path'),
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Dismiss loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving PDF: $e')),
-        );
-      }
     }
   }
 
@@ -253,6 +225,492 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     }
   }
 
+  Future<bool> _requestStoragePermission() async {
+    if (Platform.isAndroid) {
+      // For Android 13+ (API 33+)
+      try {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        if (androidInfo.version.sdkInt >= 33) {
+          // Android 13+ doesn't need storage permission for app-specific directories
+          return true;
+        } else {
+          // For older Android versions
+          final status = await Permission.storage.request();
+          return status.isGranted;
+        }
+      } catch (e) {
+        print('Device info error: $e');
+        // Fallback: try to request storage permission
+        final status = await Permission.storage.request();
+        return status.isGranted;
+      }
+    }
+    return true; // iOS doesn't need explicit storage permission
+  }
+
+  Future<void> _saveCurrentImage() async {
+    if (_doc == null || _doc!.imageFiles.isEmpty) return;
+
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Saving image...'),
+            ],
+          ),
+        ),
+      );
+
+      // Request storage permission
+      final hasPermission = await _requestStoragePermission();
+      if (!hasPermission) {
+        throw Exception('Storage permission denied');
+      }
+
+      final currentImage = _doc!.imageFiles[_currentPage];
+
+      // Get external storage directory
+      Directory? directory;
+      try {
+        directory = await getExternalStorageDirectory();
+        if (directory != null) {
+          directory = Directory('${directory.path}/Pictures/DocumentScanner');
+        }
+      } catch (e) {
+        // Fallback to app documents directory
+        directory = await getApplicationDocumentsDirectory();
+        directory = Directory('${directory.path}/SavedImages');
+      }
+
+      if (directory == null) {
+        throw Exception('No storage directory available');
+      }
+
+      // Create directory if it doesn't exist
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+
+      // Generate unique filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final filename = 'scan_page_${_currentPage + 1}_$timestamp.jpg';
+      final savedFile = File('${directory.path}/$filename');
+
+      // Copy the current image to the new location
+      await currentImage.copy(savedFile.path);
+
+      if (mounted) {
+        Navigator.pop(context); // Dismiss loading
+
+        // Show success dialog with options
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
+            title: const Text('Image Saved!'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Page ${_currentPage + 1} saved successfully.'),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.folder, size: 16, color: Colors.grey[600]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          filename,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _shareCurrentImage();
+                },
+                icon: const Icon(Icons.share, size: 18),
+                label: const Text('Share'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportDocument() async {
+    if (_doc == null || _doc!.imageFiles.isEmpty) return;
+
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text('Exporting ${_doc!.imageFiles.length} pages...'),
+            ],
+          ),
+        ),
+      );
+
+      // Request storage permission
+      final hasPermission = await _requestStoragePermission();
+      if (!hasPermission) {
+        throw Exception('Storage permission denied');
+      }
+
+      // Get external storage directory
+      Directory? baseDirectory;
+      try {
+        baseDirectory = await getExternalStorageDirectory();
+        if (baseDirectory != null) {
+          baseDirectory = Directory(
+            '${baseDirectory.path}/Documents/DocumentScanner',
+          );
+        }
+      } catch (e) {
+        // Fallback to app documents directory
+        baseDirectory = await getApplicationDocumentsDirectory();
+        baseDirectory = Directory('${baseDirectory.path}/ExportedDocuments');
+      }
+
+      if (baseDirectory == null) {
+        throw Exception('No storage directory available');
+      }
+
+      // Create export directory for this document
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final sanitizedTitle = _doc!.title
+          .replaceAll(RegExp(r'[^\w\s\-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .trim();
+      final exportDirName = '${sanitizedTitle}_$timestamp';
+      final exportDirectory = Directory('${baseDirectory.path}/$exportDirName');
+
+      if (!await exportDirectory.exists()) {
+        await exportDirectory.create(recursive: true);
+      }
+
+      // Copy all images to export directory
+      final exportedFiles = <String>[];
+      for (int i = 0; i < _doc!.imageFiles.length; i++) {
+        final imageFile = _doc!.imageFiles[i];
+        final filename = 'page_${i + 1}.jpg';
+        final exportedFile = File('${exportDirectory.path}/$filename');
+
+        await imageFile.copy(exportedFile.path);
+        exportedFiles.add(filename);
+      }
+
+      if (mounted) {
+        Navigator.pop(context); // Dismiss loading
+
+        // Show success dialog with summary
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.folder_open, color: Colors.blue, size: 48),
+            title: const Text('Document Exported!'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${exportedFiles.length} pages exported successfully.'),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.folder, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              exportDirName,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      ...exportedFiles
+                          .take(3)
+                          .map(
+                            (file) => Padding(
+                              padding: const EdgeInsets.only(left: 24),
+                              child: Text(
+                                '• $file',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ),
+                      if (exportedFiles.length > 3)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 24),
+                          child: Text(
+                            '• ... and ${exportedFiles.length - 3} more',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _shareDocument();
+                },
+                icon: const Icon(Icons.share, size: 18),
+                label: const Text('Share All'),
+              ),
+            ],
+          ),
+        );
+
+        // Show brief confirmation
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.folder, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('${exportedFiles.length} pages exported'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting document: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveAsPdf() async {
+    if (_doc == null || _doc!.imageFiles.isEmpty) return;
+
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text('Creating PDF with ${_doc!.imageFiles.length} page(s)...'),
+            ],
+          ),
+        ),
+      );
+
+      // Generate PDF
+      final pdfPath = await PdfService().saveDocumentAsPdf(_doc!);
+
+      if (mounted) {
+        Navigator.pop(context); // Dismiss loading
+
+        // Show success dialog with options
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 48),
+            title: const Text('PDF Created!'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Document saved as PDF with ${_doc!.imageFiles.length} page(s).',
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.picture_as_pdf, size: 16, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          pdfPath.split('/').last,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  // Share the PDF
+                  try {
+                    await Share.shareXFiles([
+                      XFile(pdfPath),
+                    ], text: '${_doc!.title} - PDF Document');
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error sharing PDF: $e')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.share, size: 18),
+                label: const Text('Share PDF'),
+              ),
+            ],
+          ),
+        );
+
+        // Show brief confirmation
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.picture_as_pdf, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('PDF saved with ${_doc!.imageFiles.length} page(s)'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _shareCurrentImage() async {
+    try {
+      final currentImage = _doc!.imageFiles[_currentPage];
+      await Share.shareXFiles([
+        XFile(currentImage.path),
+      ], text: 'Page ${_currentPage + 1} from ${_doc!.title}');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error sharing image: $e')));
+      }
+    }
+  }
+
+  Future<void> _shareDocument() async {
+    try {
+      final xFiles = _doc!.imageFiles.map((file) => XFile(file.path)).toList();
+
+      await Share.shareXFiles(
+        xFiles,
+        text: '${_doc!.title} - ${_doc!.imageFiles.length} pages',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error sharing document: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_doc == null) {
@@ -262,17 +720,19 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       appBar: AppBar(
         title: Text(_doc!.title),
         actions: [
+          // PDF Save button in top-right
           IconButton(
             onPressed: _saveAsPdf,
-            icon: const Icon(Icons.picture_as_pdf),
+            icon: const Icon(Icons.save_outlined),
             tooltip: 'Save as PDF',
+            color: Colors.red,
           ),
-          if (_isNewDocument)
-            IconButton(
-              onPressed: _saveDocument,
-              icon: const Icon(Icons.save_outlined),
-              tooltip: 'Save document',
-            ),
+          // if (_isNewDocument)
+          //   IconButton(
+          //     onPressed: _saveDocument,
+          //     icon: const Icon(Icons.save_outlined),
+          //     tooltip: 'Save document',
+          //   ),
         ],
       ),
       body: Column(
@@ -324,66 +784,160 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        onTap: (index) async {
-          if (index == 0) {
-            showModalBottomSheet(
-              context: context,
-              builder: (context) {
-                return Wrap(
-                  children: <Widget>[
-                    ListTile(
-                      leading: const Icon(Icons.camera_alt),
-                      title: const Text('Camera'),
-                      onTap: () {
-                        _addPage(ImageSource.camera);
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.photo_library),
-                      title: const Text('Gallery'),
-                      onTap: () {
-                        _addPage(ImageSource.gallery);
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                  ],
+      bottomNavigationBar: BottomAppBar(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            IconButton(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  builder: (context) {
+                    return Wrap(
+                      children: <Widget>[
+                        ListTile(
+                          leading: const Icon(Icons.camera_alt),
+                          title: const Text('Camera'),
+                          onTap: () {
+                            _addPage(ImageSource.camera);
+                            Navigator.of(context).pop();
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.photo_library),
+                          title: const Text('Gallery'),
+                          onTap: () {
+                            _addPage(ImageSource.gallery);
+                            Navigator.of(context).pop();
+                          },
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
-            );
-          } else if (index == 1) {
-            final newImageList = await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => ReorderScreen(images: _doc!.imageFiles),
-              ),
-            );
+              icon: const Icon(Icons.add_a_photo),
+              tooltip: 'Add Page',
+            ),
+            IconButton(
+              onPressed: () async {
+                final newImageList = await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        ReorderScreen(images: _doc!.imageFiles),
+                  ),
+                );
 
-            if (newImageList != null) {
-              setState(() {
-                _doc!.imageFiles.clear();
-                _doc!.imageFiles.addAll(newImageList);
-                if (!_isNewDocument) {
-                  DocumentStorageService().updateDocument(_doc!);
+                if (newImageList != null) {
+                  setState(() {
+                    _doc!.imageFiles.clear();
+                    _doc!.imageFiles.addAll(newImageList);
+                    if (!_isNewDocument) {
+                      DocumentStorageService().updateDocument(_doc!);
+                    }
+                  });
                 }
-              });
-            }
-          } else if (index == 2) {
-            _deletePage();
-          } else if (index == 3) {
-            _editCurrentPage();
-          }
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add_a_photo),
-            label: 'Add Page',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.reorder), label: 'Reorder'),
-          BottomNavigationBarItem(icon: Icon(Icons.delete), label: 'Delete'),
-          BottomNavigationBarItem(icon: Icon(Icons.edit), label: 'Edit'),
-        ],
+              },
+              icon: const Icon(Icons.reorder),
+              tooltip: 'Reorder',
+            ),
+            IconButton(
+              onPressed: _editCurrentPage,
+              icon: const Icon(Icons.edit),
+              tooltip: 'Edit',
+            ),
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                switch (value) {
+                  case 'save_image':
+                    _saveCurrentImage();
+                    break;
+                  case 'export_doc':
+                    _exportDocument();
+                    break;
+                  case 'save_pdf':
+                    _saveAsPdf();
+                    break;
+                  case 'share_image':
+                    _shareCurrentImage();
+                    break;
+                  case 'share_doc':
+                    _shareDocument();
+                    break;
+                  case 'delete':
+                    _deletePage();
+                    break;
+                }
+              },
+              itemBuilder: (BuildContext context) => [
+                const PopupMenuItem(
+                  value: 'save_image',
+                  child: Row(
+                    children: [
+                      Icon(Icons.save, size: 18),
+                      SizedBox(width: 8),
+                      Text('Save Current Image'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'export_doc',
+                  child: Row(
+                    children: [
+                      Icon(Icons.file_download, size: 18),
+                      SizedBox(width: 8),
+                      Text('Export Document'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'save_pdf',
+                  child: Row(
+                    children: [
+                      Icon(Icons.picture_as_pdf, size: 18),
+                      SizedBox(width: 8),
+                      Text('Save as PDF'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'share_image',
+                  child: Row(
+                    children: [
+                      Icon(Icons.share, size: 18),
+                      SizedBox(width: 8),
+                      Text('Share Current Image'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'share_doc',
+                  child: Row(
+                    children: [
+                      Icon(Icons.share_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('Share All Images'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, size: 18, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Delete Page', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ],
+              icon: const Icon(Icons.more_vert),
+              tooltip: 'More Options',
+            ),
+          ],
+        ),
       ),
     );
   }

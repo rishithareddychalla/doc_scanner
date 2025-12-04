@@ -1,6 +1,5 @@
 // lib/screens/document_detail_screen.dart
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,7 +9,6 @@ import 'package:image/image.dart' as img;
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:printing/printing.dart';
 import '../models/scanned_document.dart';
 import '../services/document_storage_service.dart';
 import '../services/pdf_service.dart';
@@ -45,7 +43,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       _doc = DocumentStorageService().getById(widget.documentId!);
     } else if (widget.imageFiles != null) {
       _isNewDocument = true;
-      _doc = ScannedDocument(
+      _doc = ScannedDocument.fromFiles(
         id: DateTime.now().toIso8601String(),
         title: 'Scan ${DateFormat.yMd().add_jms().format(DateTime.now())}',
         imageFiles: widget.imageFiles!,
@@ -64,19 +62,6 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
-  }
-
-  void _saveDocument() {
-    if (_isNewDocument) {
-      DocumentStorageService().addDocument(
-        imageFiles: _doc!.imageFiles,
-        title: _doc!.title,
-      );
-      // Pop twice to go back to the document list screen
-      Navigator.of(context)
-        ..pop()
-        ..pop();
-    }
   }
 
   Future<bool> _requestPermissions(ImageSource source) async {
@@ -126,9 +111,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       );
 
       if (pickedFile != null) {
-        // First add the image, then allow editing
+        // First add the image path to imagePaths
         setState(() {
-          _doc!.imageFiles.add(File(pickedFile.path));
+          _doc!.imagePaths.add(pickedFile.path);
           if (!_isNewDocument) {
             DocumentStorageService().updateDocument(_doc!);
           }
@@ -201,7 +186,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
               TextButton(
                 onPressed: () {
                   setState(() {
-                    _doc!.imageFiles.removeAt(_currentPage);
+                    _doc!.imagePaths.removeAt(_currentPage);
                     if (_currentPage >= _doc!.imageFiles.length) {
                       _currentPage = _doc!.imageFiles.length - 1;
                     }
@@ -573,7 +558,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const CircularProgressIndicator(),
-              const SizedBox(height: 16),
+              const SizedBox(width: 16),
               Text('Creating PDF with ${_doc!.imageFiles.length} page(s)...'),
             ],
           ),
@@ -583,6 +568,14 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       // Generate PDF
       final pdfPath = await PdfService().saveDocumentAsPdf(_doc!);
 
+      // Save PDF info to Hive storage
+      await DocumentStorageService().addPdf(
+        title: _doc!.title,
+        filePath: pdfPath,
+        pageCount: _doc!.imageFiles.length,
+        sourceDocumentId: _doc!.id,
+      );
+
       if (mounted) {
         Navigator.pop(context); // Dismiss loading
 
@@ -591,13 +584,41 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           context: context,
           builder: (context) => AlertDialog(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 48),
-            title: const Text('PDF Created!'),
+            title: const Text('PDF Created & Saved!'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Document saved as PDF with ${_doc!.imageFiles.length} page(s).',
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        color: Colors.green.shade600,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'PDF saved to your Documents list!',
+                          style: TextStyle(
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Container(
@@ -650,19 +671,27 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           ),
         );
 
-        // Show brief confirmation
+        // Show brief confirmation with action to view PDFs
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
                 Icon(Icons.picture_as_pdf, color: Colors.white),
                 const SizedBox(width: 8),
-                Text('PDF saved with ${_doc!.imageFiles.length} page(s)'),
+                Text('PDF saved! Find it in Documents tab.'),
               ],
             ),
-            backgroundColor: Colors.red,
+            backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.all(16),
+            action: SnackBarAction(
+              label: 'View PDFs',
+              textColor: Colors.white,
+              onPressed: () {
+                // Navigate to documents list and set filter to PDFs
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+            ),
           ),
         );
       }
@@ -829,9 +858,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 );
 
                 if (newImageList != null) {
+                  final List<File> newFiles = List<File>.from(newImageList);
+                  final newImagePaths = newFiles.map((f) => f.path).toList();
                   setState(() {
-                    _doc!.imageFiles.clear();
-                    _doc!.imageFiles.addAll(newImageList);
+                    _doc!.imagePaths.clear();
+                    _doc!.imagePaths.addAll(newImagePaths);
                     if (!_isNewDocument) {
                       DocumentStorageService().updateDocument(_doc!);
                     }
@@ -955,7 +986,6 @@ class ImageEditDialog extends StatefulWidget {
 class _ImageEditDialogState extends State<ImageEditDialog> {
   double _brightness = 0.0;
   double _contrast = 1.0;
-  bool _hasChanges = false;
 
   // Crop variables
   Rect? _cropRect;
@@ -964,16 +994,13 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
   final GlobalKey _imageKey = GlobalKey();
 
   void _applyFilter() {
-    setState(() {
-      _hasChanges = true;
-    });
+    setState(() {});
   }
 
   void _resetFilters() {
     setState(() {
       _brightness = 0.0;
       _contrast = 1.0;
-      _hasChanges = false;
       _cropRect = null;
       _isCropping = false;
     });
@@ -1332,7 +1359,6 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
                                 onPressed: () {
                                   setState(() {
                                     _isCropping = false;
-                                    _hasChanges = true;
                                   });
                                 },
                                 child: const Text(

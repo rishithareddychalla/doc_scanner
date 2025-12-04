@@ -1,24 +1,53 @@
 // lib/models/scanned_document.dart
 import 'dart:io';
+import 'package:hive/hive.dart';
 
-class ScannedDocument {
+part 'scanned_document.g.dart';
+
+@HiveType(typeId: 0)
+class ScannedDocument extends HiveObject {
+  @HiveField(0)
   final String id;
+
+  @HiveField(1)
   String title;
-  final List<File> imageFiles; // later you can store path instead of File
+
+  @HiveField(2)
+  final List<String> imagePaths; // Store paths instead of File objects
+
+  @HiveField(3)
   final DateTime createdAt;
 
   ScannedDocument({
     required this.id,
     required this.title,
-    required this.imageFiles,
+    required this.imagePaths,
     required this.createdAt,
   });
+
+  // Helper getter to convert paths to File objects
+  List<File> get imageFiles => imagePaths.map((path) => File(path)).toList();
+
+  // Helper method to create from File objects
+  static ScannedDocument fromFiles({
+    required String id,
+    required String title,
+    required List<File> imageFiles,
+    required DateTime createdAt,
+  }) {
+    return ScannedDocument(
+      id: id,
+      title: title,
+      imagePaths: imageFiles.map((f) => f.path).toList(),
+      createdAt: createdAt,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'title': title,
-      'imageFiles': imageFiles.map((f) => f.path).toList(),
+      'imagePaths': imagePaths,
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -27,22 +56,34 @@ class ScannedDocument {
     return ScannedDocument(
       id: json['id'],
       title: json['title'],
-      imageFiles: (json['imageFiles'] as List)
-          .map((path) => File(path as String))
-          .toList(),
+      imagePaths: List<String>.from(json['imagePaths']),
       createdAt: DateTime.parse(json['createdAt']),
     );
   }
 }
 
-// New model for saved PDFs
-class SavedPdf {
+@HiveType(typeId: 1)
+class SavedPdf extends HiveObject {
+  @HiveField(0)
   final String id;
-  final String title;
+
+  @HiveField(1)
+  String title;
+
+  @HiveField(2)
   final String filePath;
+
+  @HiveField(3)
   final DateTime createdAt;
+
+  @HiveField(4)
   final String? sourceDocumentId;
+
+  @HiveField(5)
   final int pageCount;
+
+  @HiveField(6)
+  final int fileSize; // in bytes
 
   SavedPdf({
     required this.id,
@@ -51,7 +92,19 @@ class SavedPdf {
     required this.createdAt,
     this.sourceDocumentId,
     required this.pageCount,
+    required this.fileSize,
   });
+
+  // Helper getter to get File object
+  File get file => File(filePath);
+
+  // Helper to get formatted file size
+  String get formattedFileSize {
+    if (fileSize < 1024) return '${fileSize}B';
+    if (fileSize < 1024 * 1024)
+      return '${(fileSize / 1024).toStringAsFixed(1)}KB';
+    return '${(fileSize / (1024 * 1024)).toStringAsFixed(1)}MB';
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -61,6 +114,7 @@ class SavedPdf {
       'createdAt': createdAt.toIso8601String(),
       'sourceDocumentId': sourceDocumentId,
       'pageCount': pageCount,
+      'fileSize': fileSize,
     };
   }
 
@@ -72,6 +126,7 @@ class SavedPdf {
       createdAt: DateTime.parse(json['createdAt']),
       sourceDocumentId: json['sourceDocumentId'],
       pageCount: json['pageCount'],
+      fileSize: json['fileSize'] ?? 0,
     );
   }
 }

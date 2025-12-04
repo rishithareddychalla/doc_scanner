@@ -51,6 +51,10 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.2
 
+  # Local storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
   # State mgmt (simple)
   provider: ^6.1.2
   uuid: ^4.5.2
@@ -62,6 +66,10 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Hive code generation
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.7
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/scanned_document.dart';
+import 'document_storage_service.dart';
 
 class PdfService {
   static final PdfService _instance = PdfService._internal();
@@ -91,6 +92,14 @@ class PdfService {
 
       print('📊 PDF size: ${pdfBytes.length} bytes');
       print('✅ PDF saved successfully! Size: ${pdfBytes.length} bytes');
+
+      // Save PDF metadata to storage
+      await DocumentStorageService().addPdf(
+        title: document.title,
+        filePath: filePath,
+        pageCount: document.imageFiles.length,
+        sourceDocumentId: document.id,
+      );
 
       return filePath;
     } catch (e) {

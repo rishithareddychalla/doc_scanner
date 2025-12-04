@@ -24,20 +24,29 @@ class DocumentGridTile extends StatelessWidget {
       onTap: onTap,
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8.0),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  image: DecorationImage(
-                    image: FileImage(doc.imageFiles as File),
-                    fit: BoxFit.cover,
-                  ),
+                  image: doc.imageFiles.isNotEmpty
+                      ? DecorationImage(
+                          image: FileImage(doc.imageFiles.first),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
                 ),
+                child: doc.imageFiles.isEmpty
+                    ? const Center(
+                        child: Icon(
+                          Icons.image_not_supported,
+                          size: 48,
+                          color: Colors.grey,
+                        ),
+                      )
+                    : null,
               ),
             ),
             Padding(
@@ -60,16 +69,17 @@ class DocumentGridTile extends StatelessWidget {
                         onDelete();
                       }
                     },
-                    itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                      const PopupMenuItem<String>(
-                        value: 'rename',
-                        child: Text('Rename'),
-                      ),
-                      const PopupMenuItem<String>(
-                        value: 'delete',
-                        child: Text('Delete'),
-                      ),
-                    ],
+                    itemBuilder: (BuildContext context) =>
+                        <PopupMenuEntry<String>>[
+                          const PopupMenuItem<String>(
+                            value: 'rename',
+                            child: Text('Rename'),
+                          ),
+                          const PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Text('Delete'),
+                          ),
+                        ],
                   ),
                 ],
               ),

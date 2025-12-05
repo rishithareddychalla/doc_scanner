@@ -1,7 +1,6 @@
 // lib/screens/document_detail_screen.dart
 import 'dart:io';
 import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -32,6 +31,9 @@ class DocumentDetailScreen extends StatefulWidget {
 class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   int _currentPage = 0;
   late PageController _pageController;
+
+  // Tracks version bumps for images so widgets rebuild with updated files
+  final Map<String, int> _imageVersions = {};
 
   ScannedDocument? _doc;
   bool _isNewDocument = false;
@@ -162,6 +164,12 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
 
     if (result == true) {
       // Image was edited, refresh the UI
+      final path = _doc!.imagePaths[_currentPage];
+
+      // Clear any cached image bytes for this file so fresh data is shown
+      await FileImage(File(path)).evict();
+
+      _imageVersions[path] = (_imageVersions[path] ?? 0) + 1;
       setState(() {});
       if (!_isNewDocument) {
         DocumentStorageService().updateDocument(_doc!);
@@ -777,7 +785,12 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 });
               },
               itemBuilder: (context, index) {
-                return Image.file(_doc!.imageFiles[index]);
+                final path = _doc!.imagePaths[index];
+                final version = _imageVersions[path] ?? 0;
+                return Image.file(
+                  _doc!.imageFiles[index],
+                  key: ValueKey('$path-$version'),
+                );
               },
             ),
           ),
@@ -806,7 +819,12 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                         width: 2,
                       ),
                     ),
-                    child: Image.file(_doc!.imageFiles[index]),
+                    child: Image.file(
+                      _doc!.imageFiles[index],
+                      key: ValueKey(
+                        '${_doc!.imagePaths[index]}-${_imageVersions[_doc!.imagePaths[index]] ?? 0}-thumb',
+                      ),
+                    ),
                   ),
                 );
               },
@@ -996,6 +1014,22 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
   bool _isCropping = false;
   final GlobalKey _imageKey = GlobalKey();
 
+  void _initializeCropRectIfNeeded() {
+    // Lazily set an initial crop rect once we know the rendered image bounds.
+    if (!_isCropping || _cropRect != null || _renderedImageRect == null) return;
+
+    final width = _renderedImageRect!.width * 0.8;
+    final height = _renderedImageRect!.height * 0.8;
+    final left =
+        _renderedImageRect!.left + (_renderedImageRect!.width - width) / 2;
+    final top =
+        _renderedImageRect!.top + (_renderedImageRect!.height - height) / 2;
+
+    setState(() {
+      _cropRect = Rect.fromLTWH(left, top, width, height);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1026,17 +1060,13 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
   }
 
   void _startCropping() {
-    if (_renderedImageRect == null) return;
-
     setState(() {
       _isCropping = true;
-      // Initialize crop rect to center 80% of the rendered image
-      final width = _renderedImageRect!.width * 0.8;
-      final height = _renderedImageRect!.height * 0.8;
-      final left = _renderedImageRect!.left + (_renderedImageRect!.width - width) / 2;
-      final top = _renderedImageRect!.top + (_renderedImageRect!.height - height) / 2;
+    });
 
-      _cropRect = Rect.fromLTWH(left, top, width, height);
+    // Wait for the crop view to lay out so we know the rendered image bounds
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeCropRectIfNeeded();
     });
   }
 
@@ -1091,13 +1121,19 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
                 ? originalImage.height - safeY
                 : cropHeight;
 
-            processedImage = img.copyCrop(
-              processedImage,
-              x: safeX,
-              y: safeY,
-              width: safeWidth,
-              height: safeHeight,
-            );
+            // Guard against zero-size crops (e.g., when handles reach edges)
+            if (safeWidth > 0 && safeHeight > 0) {
+              processedImage = img.copyCrop(
+                processedImage,
+                x: safeX,
+                y: safeY,
+                width: safeWidth,
+                height: safeHeight,
+              );
+            } else {
+              // Skip crop to avoid corrupt output
+              _cropRect = null;
+            }
           }
 
           // Apply brightness and contrast
@@ -1115,9 +1151,16 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
             );
           }
 
-          // Save the processed image back to the file
+          // Save the processed image back to the file (atomic replace to avoid corrupt reads)
           final processedBytes = img.encodeJpg(processedImage, quality: 85);
-          await widget.imageFile.writeAsBytes(processedBytes);
+          final tempFile = File('${widget.imageFile.path}.tmp');
+          await tempFile.writeAsBytes(processedBytes, flush: true);
+          await tempFile.copy(widget.imageFile.path);
+          await tempFile.delete().catchError((_) {});
+
+          // Bust any cached image so the updated file shows immediately
+          final provider = FileImage(widget.imageFile);
+          await provider.evict();
 
           if (mounted) {
             Navigator.of(context).pop(); // Close loading dialog
@@ -1178,8 +1221,10 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
       builder: (context, constraints) {
         // Calculate rendered image rect
         if (_decodedImage != null) {
-          final double containerAspectRatio = constraints.maxWidth / constraints.maxHeight;
-          final double imageAspectRatio = _decodedImage!.width / _decodedImage!.height;
+          final double containerAspectRatio =
+              constraints.maxWidth / constraints.maxHeight;
+          final double imageAspectRatio =
+              _decodedImage!.width / _decodedImage!.height;
 
           double renderedWidth;
           double renderedHeight;
@@ -1197,7 +1242,17 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
           final double offsetX = (constraints.maxWidth - renderedWidth) / 2;
           final double offsetY = (constraints.maxHeight - renderedHeight) / 2;
 
-          _renderedImageRect = Rect.fromLTWH(offsetX, offsetY, renderedWidth, renderedHeight);
+          _renderedImageRect = Rect.fromLTWH(
+            offsetX,
+            offsetY,
+            renderedWidth,
+            renderedHeight,
+          );
+
+          // Initialize crop rect once we know where the image is rendered
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _initializeCropRectIfNeeded();
+          });
         }
 
         return Stack(

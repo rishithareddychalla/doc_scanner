@@ -35,13 +35,7 @@ void main() {
     // Write some dummy bytes
     imageFile.writeAsBytesSync(List.filled(100, 0));
 
-    final doc = ScannedDocument(
-      id: '1',
-      title: 'Test Doc',
-      imageFiles: [imageFile],
-      createdAt: DateTime.now(),
-    );
-
+   
     final service = PdfService();
     // This will likely fail because PdfService uses Image.memory which might need flutter painting binding,
     // or pw.MemoryImage which does basic image decoding.

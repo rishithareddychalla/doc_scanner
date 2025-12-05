@@ -1,5 +1,6 @@
 // lib/screens/document_detail_screen.dart
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -989,9 +990,27 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
 
   // Crop variables
   Rect? _cropRect;
-  Size? _imageSize;
+  Size? _containerSize;
+  Rect? _renderedImageRect;
+  ui.Image? _decodedImage;
   bool _isCropping = false;
   final GlobalKey _imageKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadImageDimensions();
+  }
+
+  Future<void> _loadImageDimensions() async {
+    final data = await widget.imageFile.readAsBytes();
+    final image = await decodeImageFromList(data);
+    if (mounted) {
+      setState(() {
+        _decodedImage = image;
+      });
+    }
+  }
 
   void _applyFilter() {
     setState(() {});
@@ -1007,18 +1026,17 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
   }
 
   void _startCropping() {
+    if (_renderedImageRect == null) return;
+
     setState(() {
       _isCropping = true;
-      // Initialize crop rect to center 80% of image
-      if (_imageSize != null) {
-        final margin = _imageSize!.width * 0.1;
-        _cropRect = Rect.fromLTWH(
-          margin,
-          margin,
-          _imageSize!.width * 0.8,
-          _imageSize!.height * 0.8,
-        );
-      }
+      // Initialize crop rect to center 80% of the rendered image
+      final width = _renderedImageRect!.width * 0.8;
+      final height = _renderedImageRect!.height * 0.8;
+      final left = _renderedImageRect!.left + (_renderedImageRect!.width - width) / 2;
+      final top = _renderedImageRect!.top + (_renderedImageRect!.height - height) / 2;
+
+      _cropRect = Rect.fromLTWH(left, top, width, height);
     });
   }
 
@@ -1049,22 +1067,36 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
           img.Image processedImage = originalImage;
 
           // Apply crop if specified
-          if (_cropRect != null && _imageSize != null) {
-            // Calculate actual crop coordinates based on image dimensions
-            final scaleX = originalImage.width / _imageSize!.width;
-            final scaleY = originalImage.height / _imageSize!.height;
+          if (_cropRect != null && _renderedImageRect != null) {
+            // Calculate scale based on rendered image vs original image
+            final scale = originalImage.width / _renderedImageRect!.width;
 
-            final cropX = (_cropRect!.left * scaleX).round();
-            final cropY = (_cropRect!.top * scaleY).round();
-            final cropWidth = (_cropRect!.width * scaleX).round();
-            final cropHeight = (_cropRect!.height * scaleY).round();
+            // Map crop rect to relative to rendered image
+            final relativeLeft = _cropRect!.left - _renderedImageRect!.left;
+            final relativeTop = _cropRect!.top - _renderedImageRect!.top;
+
+            // Calculate actual crop coordinates
+            final cropX = (relativeLeft * scale).round();
+            final cropY = (relativeTop * scale).round();
+            final cropWidth = (_cropRect!.width * scale).round();
+            final cropHeight = (_cropRect!.height * scale).round();
+
+            // Ensure we don't go out of bounds (due to rounding)
+            final safeX = cropX.clamp(0, originalImage.width);
+            final safeY = cropY.clamp(0, originalImage.height);
+            final safeWidth = (safeX + cropWidth > originalImage.width)
+                ? originalImage.width - safeX
+                : cropWidth;
+            final safeHeight = (safeY + cropHeight > originalImage.height)
+                ? originalImage.height - safeY
+                : cropHeight;
 
             processedImage = img.copyCrop(
               processedImage,
-              x: cropX,
-              y: cropY,
-              width: cropWidth,
-              height: cropHeight,
+              x: safeX,
+              y: safeY,
+              width: safeWidth,
+              height: safeHeight,
             );
           }
 
@@ -1144,23 +1176,29 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
   Widget _buildCropView() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Store the available size for crop calculations
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_imageSize == null) {
-            setState(() {
-              _imageSize = Size(constraints.maxWidth, constraints.maxHeight);
-              if (_cropRect == null) {
-                final margin = constraints.maxWidth * 0.1;
-                _cropRect = Rect.fromLTWH(
-                  margin,
-                  margin * 2,
-                  constraints.maxWidth * 0.8,
-                  constraints.maxHeight * 0.6,
-                );
-              }
-            });
+        // Calculate rendered image rect
+        if (_decodedImage != null) {
+          final double containerAspectRatio = constraints.maxWidth / constraints.maxHeight;
+          final double imageAspectRatio = _decodedImage!.width / _decodedImage!.height;
+
+          double renderedWidth;
+          double renderedHeight;
+
+          if (containerAspectRatio > imageAspectRatio) {
+            // Container is wider than image, image constrained by height
+            renderedHeight = constraints.maxHeight;
+            renderedWidth = renderedHeight * imageAspectRatio;
+          } else {
+            // Container is taller than image, image constrained by width
+            renderedWidth = constraints.maxWidth;
+            renderedHeight = renderedWidth / imageAspectRatio;
           }
-        });
+
+          final double offsetX = (constraints.maxWidth - renderedWidth) / 2;
+          final double offsetY = (constraints.maxHeight - renderedHeight) / 2;
+
+          _renderedImageRect = Rect.fromLTWH(offsetX, offsetY, renderedWidth, renderedHeight);
+        }
 
         return Stack(
           children: [
@@ -1181,7 +1219,7 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
               ),
 
             // Crop handles
-            if (_cropRect != null) ...[
+            if (_cropRect != null && _renderedImageRect != null) ...[
               // Top-left handle
               Positioned(
                 left: _cropRect!.left - 10,
@@ -1191,11 +1229,11 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
                     setState(() {
                       _cropRect = Rect.fromLTRB(
                         (_cropRect!.left + details.delta.dx).clamp(
-                          0.0,
+                          _renderedImageRect!.left,
                           _cropRect!.right - 50,
                         ),
                         (_cropRect!.top + details.delta.dy).clamp(
-                          0.0,
+                          _renderedImageRect!.top,
                           _cropRect!.bottom - 50,
                         ),
                         _cropRect!.right,
@@ -1229,11 +1267,11 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
                         _cropRect!.top,
                         (_cropRect!.right + details.delta.dx).clamp(
                           _cropRect!.left + 50,
-                          constraints.maxWidth,
+                          _renderedImageRect!.right,
                         ),
                         (_cropRect!.bottom + details.delta.dy).clamp(
                           _cropRect!.top + 50,
-                          constraints.maxHeight,
+                          _renderedImageRect!.bottom,
                         ),
                       );
                     });

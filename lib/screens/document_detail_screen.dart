@@ -1140,7 +1140,7 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
           if (_brightness != 0.0) {
             processedImage = img.adjustColor(
               processedImage,
-              brightness: _brightness,
+              brightness: 1.0 + _brightness,
             );
           }
 

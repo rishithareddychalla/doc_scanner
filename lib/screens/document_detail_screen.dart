@@ -1008,7 +1008,6 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
 
   // Crop variables
   Rect? _cropRect;
-  Size? _containerSize;
   Rect? _renderedImageRect;
   ui.Image? _decodedImage;
   bool _isCropping = false;
@@ -1057,6 +1056,56 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
       _cropRect = null;
       _isCropping = false;
     });
+  }
+
+  // Shared brightness/contrast matrix so the preview matches the saved result.
+  List<double> _colorMatrix() {
+    final bias = (_brightness * 255) + 128 * (1 - _contrast);
+    return [
+      _contrast,
+      0,
+      0,
+      0,
+      bias,
+      0,
+      _contrast,
+      0,
+      0,
+      bias,
+      0,
+      0,
+      _contrast,
+      0,
+      bias,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ];
+  }
+
+  // Applies brightness/contrast directly to the image pixels.
+  img.Image _applyBrightnessContrast(img.Image image) {
+    if (_brightness == 0.0 && _contrast == 1.0) return image;
+
+    final bias = (_brightness * 255) + 128 * (1 - _contrast);
+    final c = _contrast;
+
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        final a = pixel.a;
+
+        int r = (pixel.r * c + bias).clamp(0, 255).round();
+        int g = (pixel.g * c + bias).clamp(0, 255).round();
+        int b = (pixel.b * c + bias).clamp(0, 255).round();
+
+        image.setPixelRgba(x, y, r, g, b, a);
+      }
+    }
+
+    return image;
   }
 
   void _startCropping() {
@@ -1136,27 +1185,16 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
             }
           }
 
-          // Apply brightness and contrast
-          if (_brightness != 0.0) {
-            processedImage = img.adjustColor(
-              processedImage,
-              brightness: _brightness,
-            );
-          }
-
-          if (_contrast != 1.0) {
-            processedImage = img.adjustColor(
-              processedImage,
-              contrast: _contrast,
-            );
-          }
+          // Apply brightness and contrast together so the saved image
+          // matches the on-screen preview.
+          processedImage = _applyBrightnessContrast(processedImage);
 
           // Save the processed image back to the file (atomic replace to avoid corrupt reads)
           final processedBytes = img.encodeJpg(processedImage, quality: 85);
           final tempFile = File('${widget.imageFile.path}.tmp');
           await tempFile.writeAsBytes(processedBytes, flush: true);
           await tempFile.copy(widget.imageFile.path);
-          await tempFile.delete().catchError((_) {});
+          await tempFile.delete().catchError((_) => tempFile);
 
           // Bust any cached image so the updated file shows immediately
           final provider = FileImage(widget.imageFile);
@@ -1184,28 +1222,7 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
 
   Widget _buildFilterView() {
     return ColorFiltered(
-      colorFilter: ColorFilter.matrix([
-        _contrast,
-        0,
-        0,
-        0,
-        _brightness * 255,
-        0,
-        _contrast,
-        0,
-        0,
-        _brightness * 255,
-        0,
-        0,
-        _contrast,
-        0,
-        _brightness * 255,
-        0,
-        0,
-        0,
-        1,
-        0,
-      ]),
+      colorFilter: ColorFilter.matrix(_colorMatrix()),
       child: Image.file(
         widget.imageFile,
         key: _imageKey,

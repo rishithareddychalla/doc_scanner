@@ -1221,15 +1221,59 @@ class _ImageEditDialogState extends State<ImageEditDialog> {
   }
 
   Widget _buildFilterView() {
-    return ColorFiltered(
-      colorFilter: ColorFilter.matrix(_colorMatrix()),
-      child: Image.file(
-        widget.imageFile,
-        key: _imageKey,
-        fit: BoxFit.contain,
-        width: double.infinity,
-        height: double.infinity,
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calculate rendered image rect for crop overlay positioning
+        if (_decodedImage != null) {
+          final double containerAspectRatio =
+              constraints.maxWidth / constraints.maxHeight;
+          final double imageAspectRatio =
+              _decodedImage!.width / _decodedImage!.height;
+
+          double renderedWidth;
+          double renderedHeight;
+
+          if (containerAspectRatio > imageAspectRatio) {
+            renderedHeight = constraints.maxHeight;
+            renderedWidth = renderedHeight * imageAspectRatio;
+          } else {
+            renderedWidth = constraints.maxWidth;
+            renderedHeight = renderedWidth / imageAspectRatio;
+          }
+
+          final double offsetX = (constraints.maxWidth - renderedWidth) / 2;
+          final double offsetY = (constraints.maxHeight - renderedHeight) / 2;
+
+          // Store rendered rect so crop coordinates can be calculated correctly
+          _renderedImageRect = Rect.fromLTWH(
+            offsetX,
+            offsetY,
+            renderedWidth,
+            renderedHeight,
+          );
+        }
+
+        return Stack(
+          children: [
+            // Filtered image
+            ColorFiltered(
+              colorFilter: ColorFilter.matrix(_colorMatrix()),
+              child: Image.file(
+                widget.imageFile,
+                key: _imageKey,
+                fit: BoxFit.contain,
+                width: double.infinity,
+                height: double.infinity,
+              ),
+            ),
+            // Crop overlay (if crop rect exists)
+            if (_cropRect != null && _renderedImageRect != null)
+              Positioned.fill(
+                child: CustomPaint(painter: CropOverlayPainter(_cropRect!)),
+              ),
+          ],
+        );
+      },
     );
   }
 

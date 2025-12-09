@@ -84,39 +84,52 @@ class _ScanScreenState extends State<ScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Scan')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Center(
-              child: Text(
-                'Tap "Camera" or "Gallery" to start.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyLarge,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight:
+                  MediaQuery.of(context).size.height -
+                  MediaQuery.of(context).padding.top -
+                  kToolbarHeight -
+                  80, // Account for bottom nav bar
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Center(
+                    child: Text(
+                      'Tap "Camera" or "Gallery" to start.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: PrimaryButton(
+                          label: 'Camera',
+                          icon: Icons.camera_alt_outlined,
+                          onPressed: () => _pickImage(ImageSource.camera),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: PrimaryButton(
+                          label: 'Gallery',
+                          icon: Icons.photo_library_outlined,
+                          onPressed: () => _pickImage(ImageSource.gallery),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: PrimaryButton(
-                    label: 'Camera',
-                    icon: Icons.camera_alt_outlined,
-                    onPressed: () => _pickImage(ImageSource.camera),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: PrimaryButton(
-                    label: 'Gallery',
-                    icon: Icons.photo_library_outlined,
-                    onPressed: () => _pickImage(ImageSource.gallery),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );

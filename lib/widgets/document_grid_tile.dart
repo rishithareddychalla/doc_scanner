@@ -23,12 +23,19 @@ class DocumentGridTile extends StatelessWidget {
       onTap: onTap,
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.0),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            Flexible(
+              flex: 3,
               child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 100),
                 decoration: BoxDecoration(
                   image: doc.imageFiles.isNotEmpty
                       ? DecorationImage(
@@ -49,18 +56,24 @@ class DocumentGridTile extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(8.0, 8.0, 0.0, 0.0),
+              padding: const EdgeInsets.fromLTRB(8.0, 6.0, 0.0, 0.0),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: Text(
                       doc.title,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                       overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
                   PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onSelected: (value) {
                       if (value == 'rename') {
                         onRename();
@@ -84,10 +97,14 @@ class DocumentGridTile extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 8.0),
+              padding: const EdgeInsets.fromLTRB(8.0, 2.0, 8.0, 6.0),
               child: Text(
                 DateFormat.yMMMd().format(doc.createdAt),
-                style: Theme.of(context).textTheme.bodySmall,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                    ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

@@ -34,14 +34,20 @@ class PdfGridTile extends StatelessWidget {
       onTap: onTap,
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.0),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             // PDF Icon Section
-            Expanded(
+            Flexible(
+              flex: 3,
               child: Container(
                 width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 100),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
@@ -51,33 +57,26 @@ class PdfGridTile extends StatelessWidget {
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.picture_as_pdf, size: 48, color: Colors.white),
-                    const SizedBox(height: 8),
+                    Icon(Icons.picture_as_pdf, size: 40, color: Colors.white),
+                    const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
-                        vertical: 4,
+                        vertical: 3,
                       ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '${pdf.pageCount} ${pdf.pageCount == 1 ? 'page' : 'pages'}',
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.bold,
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      pdf.formattedFileSize,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
-                        fontSize: 10,
                       ),
                     ),
                   ],
@@ -86,35 +85,40 @@ class PdfGridTile extends StatelessWidget {
             ),
             // Title and Actions Section
             Padding(
-              padding: const EdgeInsets.fromLTRB(8.0, 8.0, 0.0, 0.0),
+              padding: const EdgeInsets.fromLTRB(8.0, 6.0, 0.0, 0.0),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           pdf.title,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
                           overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
+                          maxLines: 1,
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               Icons.picture_as_pdf,
-                              size: 12,
+                              size: 11,
                               color: Colors.red.shade400,
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 3),
                             Text(
                               'PDF',
                               style: TextStyle(
                                 color: Colors.red.shade400,
-                                fontSize: 10,
+                                fontSize: 9,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -124,6 +128,8 @@ class PdfGridTile extends StatelessWidget {
                     ),
                   ),
                   PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onSelected: (value) {
                       switch (value) {
                         case 'share':
@@ -179,10 +185,14 @@ class PdfGridTile extends StatelessWidget {
             ),
             // Date Section
             Padding(
-              padding: const EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 8.0),
+              padding: const EdgeInsets.fromLTRB(8.0, 2.0, 8.0, 6.0),
               child: Text(
                 DateFormat.yMMMd().format(pdf.createdAt),
-                style: Theme.of(context).textTheme.bodySmall,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontSize: 10),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
